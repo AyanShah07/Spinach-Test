@@ -44,6 +44,9 @@ def create_llm():
     if provider == "groq" and settings.GROQ_API_KEY:
         from app.ai.adapters.groq_adapter import GroqAdapter
         return GroqAdapter()
+    if provider == "gemini" and settings.GEMINI_API_KEY:
+        from app.ai.adapters.gemini_adapter import GeminiAdapter
+        return GeminiAdapter()
     if provider == "ollama":
         from app.ai.adapters.ollama_adapter import OllamaAdapter
         return OllamaAdapter()

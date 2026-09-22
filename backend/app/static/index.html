@@ -372,7 +372,10 @@
         <div class="card">
           <div class="card-title">
             <span>AI Decision Analysis</span>
-            <span id="aiEngineBadge" class="ai-badge" style="display:none;">Engine</span>
+            <div style="display:flex; gap:6px;">
+              <span id="aiGroundingBadge" class="ai-badge" style="display:none; background:rgba(59,130,246,0.15); border-color:rgba(59,130,246,0.3); color:#60a5fa;">🛡️ SQL Grounded</span>
+              <span id="aiEngineBadge" class="ai-badge" style="display:none;">Engine</span>
+            </div>
           </div>
 
           <div id="aiEmptyState" style="padding: 40px 20px; text-align:center; color:var(--text-muted);">
@@ -396,6 +399,10 @@
             <label style="margin-top: 18px;">Actionable AI Recommendations</label>
             <ul id="recsList" class="bullet-list"></ul>
 
+            <div id="groundingNotesBlock" style="margin-top:14px; font-size:0.75rem; color:#93c5fd; background:#0e1726; padding:8px 12px; border-radius:6px; border:1px solid #1e293b; display:none;">
+              <span id="groundingNotesText"></span>
+            </div>
+
             <details>
               <summary>View Raw JSON Payload</summary>
               <pre id="rawAiJson" style="margin-top:10px;"></pre>
@@ -407,7 +414,7 @@
 
     <!-- TAB 2: Customers & Live Ingestion -->
     <section id="customers-tab">
-      <div class="dashboard-grid">
+      <div class="dashboard-grid" style="margin-bottom:20px;">
         <div class="card">
           <div class="card-title">Event Ingestion</div>
           <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">Ingest durable events into local Redis Streams & PostgreSQL outbox.</p>
@@ -444,6 +451,24 @@
             <button class="primary" onclick="lookupCustomer()">Lookup</button>
           </div>
           <pre id="customerOut" style="margin-top:14px;">Enter customer ID and click Lookup.</pre>
+        </div>
+      </div>
+
+      <!-- Idempotency & Deduplication Demonstration Card -->
+      <div class="card">
+        <div class="card-title">
+          <span>Idempotency & Deduplication Demonstration</span>
+          <button class="primary" style="font-size:0.78rem;" onclick="sendDuplicateDemoBatch()">⚡ Send Duplicate Batch (6 items, 3 duplicates)</button>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:12px;">Demonstrates PostgreSQL <code>ON CONFLICT DO NOTHING</code> deduplication authority. Sends 3 unique event IDs duplicated twice.</p>
+        <div id="dedupResult" style="display:none; margin-top:10px;">
+          <div class="metric-grid">
+            <div class="metric-box"><div class="metric-label">Submitted</div><div class="metric-val" id="dedupSubmitted">6</div></div>
+            <div class="metric-box"><div class="metric-label">Accepted (Committed)</div><div class="metric-val" id="dedupAccepted" style="color:var(--success);">3</div></div>
+            <div class="metric-box"><div class="metric-label">Duplicates Skipped</div><div class="metric-val" id="dedupSkipped" style="color:var(--warning);">3</div></div>
+            <div class="metric-box"><div class="metric-label">Rejected Errors</div><div class="metric-val" id="dedupRejected">0</div></div>
+          </div>
+          <pre id="dedupJson" style="max-height:160px;"></pre>
         </div>
       </div>
     </section>
@@ -613,6 +638,32 @@
         badge.className = "ai-badge " + (isLlm ? "llm" : "");
         badge.textContent = isLlm ? "AI Provider: LLM" : "Engine: Rule-Based Fallback";
 
+        // AI Grounding Verification Badge
+        const gBadge = $("aiGroundingBadge");
+        if (gBadge && analysis.grounding_verified !== undefined) {
+          gBadge.style.display = "inline-flex";
+          if (analysis.grounding_verified) {
+            gBadge.style.background = "rgba(16, 185, 129, 0.15)";
+            gBadge.style.borderColor = "rgba(16, 185, 129, 0.3)";
+            gBadge.style.color = "#34d399";
+            gBadge.textContent = "🛡️ SQL Grounded & Verified";
+          } else {
+            gBadge.style.background = "rgba(245, 158, 11, 0.15)";
+            gBadge.style.borderColor = "rgba(245, 158, 11, 0.3)";
+            gBadge.style.color = "#fbbf24";
+            gBadge.textContent = "⚠️ Unverified Stat Flagged";
+          }
+        }
+
+        // Grounding notes block
+        const notes = analysis.grounding_notes || [];
+        if (notes.length > 0 && $("groundingNotesBlock")) {
+          $("groundingNotesBlock").style.display = "block";
+          $("groundingNotesText").textContent = "Grounding verification: " + notes.join("; ");
+        } else if ($("groundingNotesBlock")) {
+          $("groundingNotesBlock").style.display = "none";
+        }
+
         $("aiConfidenceText").textContent = "Confidence Score: " + (analysis.confidence ? (analysis.confidence * 100).toFixed(0) + "%" : "High");
 
         // Facts list
@@ -631,6 +682,30 @@
       } finally {
         $("analyzeBtn").disabled = false;
         $("recBtn").disabled = false;
+      }
+    }
+
+    async function sendDuplicateDemoBatch() {
+      const ts = new Date().toISOString();
+      const baseId = "evt_ui_dedup_" + Date.now();
+      const events = [
+        { event_id: `${baseId}_1`, customer_id: "cust_000001", channel: "email", event_type: "open", timestamp: ts, metadata: { attempt: 1 } },
+        { event_id: `${baseId}_1`, customer_id: "cust_000001", channel: "email", event_type: "open", timestamp: ts, metadata: { attempt: 2 } },
+        { event_id: `${baseId}_2`, customer_id: "cust_000001", channel: "email", event_type: "click", timestamp: ts, metadata: { attempt: 1 } },
+        { event_id: `${baseId}_2`, customer_id: "cust_000001", channel: "email", event_type: "click", timestamp: ts, metadata: { attempt: 2 } },
+        { event_id: `${baseId}_3`, customer_id: "cust_000001", channel: "email", event_type: "purchase", timestamp: ts, metadata: { attempt: 1 } },
+        { event_id: `${baseId}_3`, customer_id: "cust_000001", channel: "email", event_type: "purchase", timestamp: ts, metadata: { attempt: 2 } },
+      ];
+      try {
+        const res = await apiFetch("/events/batch", { method: "POST", body: JSON.stringify({ events }) });
+        $("dedupResult").style.display = "block";
+        $("dedupSubmitted").textContent = "6";
+        $("dedupAccepted").textContent = res.accepted;
+        $("dedupSkipped").textContent = res.duplicates;
+        $("dedupRejected").textContent = (res.rejected || []).length;
+        $("dedupJson").textContent = JSON.stringify(res, null, 2);
+      } catch (err) {
+        alert("Deduplication demo failed: " + err.message);
       }
     }
 

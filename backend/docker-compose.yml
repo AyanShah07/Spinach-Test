@@ -35,13 +35,15 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
+      SERVICE_ROLE: api
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/martech
       DATABASE_URL_SYNC: postgresql://postgres:postgres@postgres:5432/martech
       REDIS_URL: redis://redis:6379/0
       LLM_PROVIDER: ${LLM_PROVIDER:-none}
-      RUN_EMBEDDED_WORKER: "true"
+      RUN_EMBEDDED_WORKER: "false"
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,14 +51,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Optional: scale workers separately
-  # docker compose up --scale worker=2
+  # Dedicated Event Worker fleet (scale with: docker compose up --scale worker=3)
   worker:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["python", "-m", "app.workers"]
     environment:
+      SERVICE_ROLE: worker
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/martech
       REDIS_URL: redis://redis:6379/0
       RUN_EMBEDDED_WORKER: "false"
@@ -65,8 +66,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    profiles:
-      - workers
     restart: unless-stopped
 
 volumes:

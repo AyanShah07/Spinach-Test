@@ -11,6 +11,8 @@ class AIResponse(BaseModel):
     recommendations: list[str] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0, default=0.5)
     source: str = "llm"  # "llm" | "fallback"
+    grounding_verified: bool = True
+    grounding_notes: list[str] = Field(default_factory=list)
 
 
 class LLMProvider(ABC):
