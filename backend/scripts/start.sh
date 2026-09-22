@@ -31,36 +31,51 @@ if [ -z "$DATABASE_URL" ] || [[ "$DATABASE_URL" == *"localhost"* ]] || [[ "$DATA
     PG_BIN="/usr/lib/postgresql/${PG_VERSION}/bin"
     PG_DATA="/var/lib/postgresql/data"
 
+    mkdir -p /var/run/postgresql "$PG_DATA"
+    chown -R postgres:postgres /var/run/postgresql "$PG_DATA"
+
     if [ ! -f "$PG_DATA/PG_VERSION" ]; then
         echo "==> Initializing PostgreSQL data directory at $PG_DATA..."
-        mkdir -p "$PG_DATA"
-        chown -R postgres:postgres "$PG_DATA"
-        su - postgres -c "$PG_BIN/initdb -D $PG_DATA --auth-local=trust --auth-host=md5"
+        su - postgres -c "$PG_BIN/initdb -D $PG_DATA"
         
-        # Configure postgres to listen on localhost
+        # Configure postgres to listen on localhost with trust auth inside container
         echo "listen_addresses = '127.0.0.1'" >> "$PG_DATA/postgresql.conf"
-        echo "host all all 127.0.0.1/32 md5" >> "$PG_DATA/pg_hba.conf"
+        cat <<EOF > "$PG_DATA/pg_hba.conf"
+local   all             all                                     trust
+host    all             all             127.0.0.1/32            trust
+host    all             all             ::1/128                 trust
+EOF
     fi
 
     echo "==> Starting PostgreSQL daemon..."
-    su - postgres -c "$PG_BIN/pg_ctl -D $PG_DATA -o '-c shared_buffers=32MB -c max_connections=30' -l /var/log/postgresql.log start"
+    # Log inside $PG_DATA to avoid permission issues in /var/log
+    su - postgres -c "$PG_BIN/pg_ctl -D $PG_DATA -o '-c shared_buffers=32MB -c max_connections=30' -l $PG_DATA/postgresql.log start"
 
     # Wait for PostgreSQL
+    PG_READY=0
     for i in {1..30}; do
         if su - postgres -c "$PG_BIN/pg_isready -h 127.0.0.1 -p 5432" >/dev/null 2>&1; then
             echo "==> PostgreSQL is ready."
+            PG_READY=1
             break
         fi
         sleep 1
     done
 
-    # Ensure postgres role has password 'postgres' and 'martech' database exists
-    su - postgres -c "$PG_BIN/psql -h 127.0.0.1 -c \"ALTER USER postgres WITH PASSWORD 'postgres';\"" || true
-    su - postgres -c "$PG_BIN/psql -h 127.0.0.1 -tc \"SELECT 1 FROM pg_database WHERE datname = 'martech'\"" | grep -q 1 || \
-        su - postgres -c "$PG_BIN/psql -h 127.0.0.1 -c \"CREATE DATABASE martech OWNER postgres;\""
+    if [ "$PG_READY" -ne 1 ]; then
+        echo "==> ERROR: PostgreSQL failed to start. Displaying log output:"
+        cat "$PG_DATA/postgresql.log" || true
+        exit 1
+    fi
+
+    # Ensure postgres role and 'martech' database exist
+    su - postgres -c "$PG_BIN/psql -c \"ALTER ROLE postgres WITH PASSWORD 'postgres';\"" || true
+    su - postgres -c "$PG_BIN/psql -tc \"SELECT 1 FROM pg_database WHERE datname = 'martech'\"" | grep -q 1 || \
+        su - postgres -c "$PG_BIN/psql -c \"CREATE DATABASE martech OWNER postgres;\""
 
     export DATABASE_URL="postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/martech"
     export DATABASE_URL_SYNC="postgresql://postgres:postgres@127.0.0.1:5432/martech"
+    echo "==> Embedded PostgreSQL configured and ready."
 else
     echo "==> Using external DATABASE_URL."
 fi
