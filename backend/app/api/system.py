@@ -93,3 +93,15 @@ async def replay_dlq(dlq_id: int, session=Depends(get_session)):
     await enqueue_outbox(session, event.event_id, payload)
     await session.commit()
     return {"status": "requeued", "event_id": row.event_id, "dlq_id": dlq_id}
+
+
+@router.post("/seed")
+async def seed_data():
+    try:
+        from scripts.generate_synthetic_data import generate
+        as_of = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        await generate(customers=100, events=500, campaigns=10, seed=42, as_of=as_of)
+        return {"status": "seeded", "message": "Demo campaigns, customers, and events generated successfully"}
+    except Exception as exc:
+        from app.core.exceptions import AppError
+        raise AppError(f"Seeding failed: {exc}", code="seed_failed", status_code=500) from exc

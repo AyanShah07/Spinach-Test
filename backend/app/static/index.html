@@ -3,165 +3,693 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MarTech Intelligence</title>
+  <title>MarTech Intelligence · AI Campaign Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    :root { color-scheme: dark; }
-    body { font-family: system-ui, sans-serif; max-width: 880px; margin: 24px auto; padding: 0 16px; background: #0f172a; color: #e2e8f0; }
-    h1 { font-size: 1.4rem; margin-bottom: 4px; }
-    p.sub { color: #94a3b8; margin-top: 0; }
-    nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
-    button, .tab { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
-    button.primary { background: #2563eb; border-color: #2563eb; }
-    button:disabled { opacity: 0.6; }
-    .tab.active { background: #2563eb; border-color: #2563eb; }
-    section { display: none; background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 16px; }
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1e293b;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --accent-glow: rgba(59, 130, 246, 0.25);
+      --purple: #8b5cf6;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --border: #223049;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px 16px;
+      min-height: 100vh;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    
+    /* Header */
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .brand h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #60a5fa, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .brand p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Badges & Pills */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      background: #1e293b;
+      border: 1px solid var(--border);
+    }
+    .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .pill.online .pill-dot { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .pill.degraded .pill-dot { background: var(--warning); }
+    .pill.error .pill-dot { background: var(--danger); }
+
+    /* Buttons */
+    button {
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #1e293b;
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    button:hover { background: #27354f; border-color: #3b82f6; }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    button.primary:hover {
+      background: var(--accent-hover);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+    button.purple {
+      background: var(--purple);
+      border-color: var(--purple);
+      color: #fff;
+    }
+    button.purple:hover {
+      background: #7c3aed;
+      box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Navigation Tabs */
+    nav {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 14px;
+      font-weight: 500;
+      border-radius: 6px;
+    }
+    .tab-btn:hover { background: #131c2e; color: var(--text); }
+    .tab-btn.active {
+      background: #1e293b;
+      color: #60a5fa;
+      border: 1px solid var(--border);
+    }
+
+    /* Layout Sections */
+    section { display: none; }
     section.active { display: block; }
-    label { display: block; font-size: 12px; color: #94a3b8; margin: 10px 0 4px; }
-    input { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; }
-    pre { background: #020617; padding: 12px; border-radius: 6px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+
+    /* Grid Layout for AI Tab */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 860px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Forms & Inputs */
+    label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    input, select {
+      width: 100%;
+      background: #0b111e;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.88rem;
+      margin-bottom: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+
+    /* Metrics display */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin: 16px 0;
+    }
+    .metric-box {
+      background: #0b111e;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .metric-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .metric-val {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #60a5fa;
+      margin-top: 4px;
+    }
+
+    /* AI Analysis Presentation */
+    .ai-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c084fc;
+    }
+    .ai-badge.llm {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: #34d399;
+    }
+    .bullet-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .bullet-item {
+      background: #0b111e;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+    .bullet-item.rec { border-left-color: var(--purple); }
+
+    /* Code & Output */
+    pre {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      background: #050811;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      overflow-x: auto;
+      max-height: 250px;
+      color: #cbd5e1;
+    }
+    details {
+      background: #0d1424;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-top: 16px;
+      font-size: 0.85rem;
+    }
+    details summary { cursor: pointer; color: var(--text-muted); font-weight: 500; }
+    
+    .loading-pulse {
+      display: inline-block;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
   </style>
 </head>
 <body>
-  <h1>MarTech Intelligence</h1>
-  <p class="sub">Simple demo UI · API base <code id="baseLabel"></code> · <a href="/docs" style="color:#93c5fd">OpenAPI</a></p>
-  <details><summary>Connection settings</summary><label for="apiKey">API key (if configured)</label><input id="apiKey" type="password" autocomplete="off" /></details>
-  <nav>
-    <button class="tab active" data-tab="health">Health</button>
-    <button class="tab" data-tab="ingest">Ingest</button>
-    <button class="tab" data-tab="batch">Batch</button>
-    <button class="tab" data-tab="customer">Customer</button>
-    <button class="tab" data-tab="audience">Audience</button>
-    <button class="tab" data-tab="analyze">AI analyze</button>
-    <button class="tab" data-tab="dlq">DLQ</button>
-  </nav>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <h1>MarTech Intelligence</h1>
+        <p>AI Campaign Decision Engine & Durable Ingestion · Render Local Backend</p>
+      </div>
+      <div class="header-actions">
+        <div id="sysPill" class="pill"><span class="pill-dot"></span><span id="sysStatus">Checking…</span></div>
+        <button id="seedBtn" onclick="seedDemoData()">⚡ Seed Demo Data</button>
+      </div>
+    </header>
 
-  <section id="health" class="active">
-    <p>GET /api/v1/system/health</p>
-    <button class="primary" onclick="run(() => get('/system/health'))">Check health</button>
-  </section>
+    <!-- Navigation Tabs -->
+    <nav>
+      <button class="tab-btn active" data-tab="ai-tab">✨ AI Decision Engine</button>
+      <button class="tab-btn" data-tab="customers-tab">👤 Customers & Events</button>
+      <button class="tab-btn" data-tab="system-tab">⚙️ System & Health</button>
+    </nav>
 
-  <section id="ingest">
-    <p>POST /api/v1/events</p>
-    <label>Customer ID</label><input id="cust" value="cust_000001" />
-    <div class="row">
-      <div><label>Channel</label><input id="channel" value="email" /></div>
-      <div><label>Event type</label><input id="etype" value="open" /></div>
-    </div>
-    <p><button class="primary" onclick="sendEvent()">Send event</button></p>
-  </section>
+    <!-- TAB 1: AI Decision Engine & Demo Data -->
+    <section id="ai-tab" class="active">
+      <div class="dashboard-grid">
+        <!-- Campaign Selector & Metadata -->
+        <div class="card">
+          <div class="card-title">
+            <span>Demo Campaigns</span>
+            <button onclick="loadCampaigns()" style="padding:4px 8px; font-size:0.75rem;">↻ Refresh</button>
+          </div>
+          
+          <label for="campaignSelect">Select Campaign</label>
+          <select id="campaignSelect" onchange="onCampaignChange()">
+            <option value="">Loading campaigns…</option>
+          </select>
 
-  <section id="batch">
-    <p>POST /api/v1/events/batch (2 sample events, one duplicate id)</p>
-    <button class="primary" onclick="sendBatch()">Send batch</button>
-  </section>
+          <div id="campaignDetails" style="display:none;">
+            <div style="margin-bottom: 12px;">
+              <span id="campName" style="font-weight:600; font-size:0.95rem; color:#f8fafc;"></span>
+              <div style="margin-top:4px; display:flex; gap:6px;">
+                <span id="campObjective" class="pill" style="font-size:0.7rem; color:#93c5fd;"></span>
+                <span id="campChannel" class="pill" style="font-size:0.7rem; color:#a78bfa;"></span>
+              </div>
+            </div>
 
-  <section id="customer">
-    <p>GET /api/v1/customers/{id}</p>
-    <label>Customer ID</label><input id="cust2" value="cust_000001" />
-    <p><button class="primary" onclick="run(() => get('/customers/' + encodeURIComponent($('cust2').value)))">Load customer</button></p>
-  </section>
+            <div class="metric-grid">
+              <div class="metric-box">
+                <div class="metric-label">Audience</div>
+                <div class="metric-val" id="campAudience">—</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Open Rate</div>
+                <div class="metric-val" id="campOpenRate">—</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Click Rate</div>
+                <div class="metric-val" id="campClickRate">—</div>
+              </div>
+              <div class="metric-box">
+                <div class="metric-label">Conversion</div>
+                <div class="metric-val" id="campConvRate">—</div>
+              </div>
+            </div>
+          </div>
 
-  <section id="audience">
-    <p>POST /api/v1/audience/recommend</p>
-    <div class="row">
-      <div><label>Channel</label><input id="achannel" value="email" /></div>
-      <div><label>Size</label><input id="asize" value="20" /></div>
-    </div>
-    <p><button class="primary" onclick="recommend()">Recommend</button></p>
-  </section>
+          <div style="margin-top: 16px; display:flex; flex-direction:column; gap:8px;">
+            <button id="analyzeBtn" class="primary" onclick="runAnalysis('analyze')">✨ Analyze Campaign Performance</button>
+            <button id="recBtn" class="purple" onclick="runAnalysis('recommend')">🎯 Top 3 Action Recommendations</button>
+          </div>
+        </div>
 
-  <section id="analyze">
-    <p>POST /api/v1/campaigns/{id}/analyze</p>
-    <label>Campaign ID</label><input id="camp" value="camp_000" />
-    <p><button class="primary" onclick="run(() => post('/campaigns/' + encodeURIComponent($('camp').value) + '/analyze', {}))">Analyze</button></p>
-  </section>
+        <!-- AI Output Showcase -->
+        <div class="card">
+          <div class="card-title">
+            <span>AI Decision Analysis</span>
+            <span id="aiEngineBadge" class="ai-badge" style="display:none;">Engine</span>
+          </div>
 
-  <section id="dlq">
-    <p>GET /api/v1/system/dlq</p>
-    <button class="primary" onclick="run(() => get('/system/dlq'))">List DLQ</button>
-    <label>Replay DLQ id</label><input id="dlqid" value="1" />
-    <p><button onclick="run(() => post('/system/dlq/' + encodeURIComponent($('dlqid').value) + '/replay', {}))">Replay</button></p>
-  </section>
+          <div id="aiEmptyState" style="padding: 40px 20px; text-align:center; color:var(--text-muted);">
+            <p style="font-size:1.1rem; margin-bottom:8px;">Select a campaign and trigger the AI Decision Engine</p>
+            <p style="font-size:0.85rem;">Extracts performance metrics from local PostgreSQL and synthesizes actionable strategic improvements.</p>
+          </div>
 
-  <h3>Response</h3>
-  <pre id="out">Ready.</pre>
+          <div id="aiLoading" style="display:none; padding: 40px 20px; text-align:center;">
+            <p class="loading-pulse" style="font-size:1rem; color:#60a5fa;">Running grounded campaign evaluation…</p>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">Analyzing open rates, conversion benchmarks, and channel efficacy.</p>
+          </div>
+
+          <div id="aiResult" style="display:none;">
+            <div style="margin-bottom: 16px; display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.8rem; color:var(--text-muted);" id="aiConfidenceText">Confidence: —</span>
+            </div>
+
+            <label>Grounded Facts & Observations</label>
+            <ul id="factsList" class="bullet-list"></ul>
+
+            <label style="margin-top: 18px;">Actionable AI Recommendations</label>
+            <ul id="recsList" class="bullet-list"></ul>
+
+            <details>
+              <summary>View Raw JSON Payload</summary>
+              <pre id="rawAiJson" style="margin-top:10px;"></pre>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: Customers & Live Ingestion -->
+    <section id="customers-tab">
+      <div class="dashboard-grid">
+        <div class="card">
+          <div class="card-title">Event Ingestion</div>
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">Ingest durable events into local Redis Streams & PostgreSQL outbox.</p>
+          <label for="custInput">Customer ID</label>
+          <input id="custInput" value="cust_000001" />
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <label for="channelInput">Channel</label>
+              <select id="channelInput">
+                <option value="email">email</option>
+                <option value="sms">sms</option>
+                <option value="whatsapp">whatsapp</option>
+                <option value="push">push</option>
+                <option value="web">web</option>
+              </select>
+            </div>
+            <div>
+              <label for="eventInput">Event Type</label>
+              <select id="eventInput">
+                <option value="open">open</option>
+                <option value="click">click</option>
+                <option value="purchase">purchase</option>
+                <option value="view">view</option>
+              </select>
+            </div>
+          </div>
+          <button class="primary" style="width:100%;" onclick="sendTestEvent()">Send Test Event</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Customer Profile Lookup</div>
+          <div style="display:flex; gap:8px;">
+            <input id="lookupCust" value="cust_000001" placeholder="Customer ID" style="margin-bottom:0;" />
+            <button class="primary" onclick="lookupCustomer()">Lookup</button>
+          </div>
+          <pre id="customerOut" style="margin-top:14px;">Enter customer ID and click Lookup.</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: System & Health -->
+    <section id="system-tab">
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-title">
+          <span>Local Render Services Health</span>
+          <button onclick="checkHealth()" style="font-size:0.75rem;">Check Now</button>
+        </div>
+        <div class="metric-grid">
+          <div class="metric-box">
+            <div class="metric-label">Database (Postgres)</div>
+            <div class="metric-val" id="dbStatus">—</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Redis Streams</div>
+            <div class="metric-val" id="redisStatus">—</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Embedded Worker</div>
+            <div class="metric-val" id="workerStatus">—</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Queue Depth</div>
+            <div class="metric-val" id="queueDepth">—</div>
+          </div>
+        </div>
+        <details>
+          <summary>Full Health JSON</summary>
+          <pre id="healthOut" style="margin-top:10px;">Loading…</pre>
+        </details>
+      </div>
+
+      <div class="card">
+        <div class="card-title">API Key (Optional)</div>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;">If <code>API_KEY</code> is configured in backend environment variables, provide it here:</p>
+        <input id="apiKey" type="password" placeholder="Enter API key if required" style="max-width:400px;" />
+      </div>
+    </section>
+  </div>
 
   <script>
     const BASE = "/api/v1";
-    document.getElementById("baseLabel").textContent = BASE;
     const $ = (id) => document.getElementById(id);
+    let campaignsCache = [];
 
-    document.querySelectorAll(".tab").forEach((btn) => {
+    // Tab Navigation
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.onclick = () => {
-        document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
         document.querySelectorAll("section").forEach((s) => s.classList.remove("active"));
         btn.classList.add("active");
         $(btn.dataset.tab).classList.add("active");
       };
     });
 
-    async function run(fn) {
-      $("out").textContent = "Loading…";
+    async function apiFetch(path, options = {}) {
+      const apiKey = $("apiKey") ? $("apiKey").value : "";
+      const headers = { "Content-Type": "application/json", ...(apiKey ? { "X-API-Key": apiKey } : {}), ...(options.headers || {}) };
+      const res = await fetch(BASE + path, { ...options, headers });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+      if (!res.ok) throw new Error(data.error || data.detail || data.status || text || "Request failed");
+      return data;
+    }
+
+    async function checkHealth() {
       try {
-        const data = await fn();
-        $("out").textContent = JSON.stringify(data, null, 2);
-      } catch (e) {
-        $("out").textContent = String(e);
+        const h = await apiFetch("/system/health");
+        const isOk = h.status === "ok";
+        $("sysPill").className = "pill " + (isOk ? "online" : "degraded");
+        $("sysStatus").textContent = isOk ? "Online (All Services)" : "Degraded";
+        
+        $("dbStatus").textContent = h.database || "—";
+        $("dbStatus").style.color = h.database === "ok" ? "var(--success)" : "var(--danger)";
+        
+        $("redisStatus").textContent = h.redis || "—";
+        $("redisStatus").style.color = h.redis === "ok" ? "var(--success)" : "var(--danger)";
+
+        $("workerStatus").textContent = h.worker || "—";
+        $("workerStatus").style.color = h.worker === "ok" ? "var(--success)" : "var(--danger)";
+
+        $("queueDepth").textContent = h.queue_depth !== null ? h.queue_depth : "0";
+        $("healthOut").textContent = JSON.stringify(h, null, 2);
+      } catch (err) {
+        $("sysPill").className = "pill error";
+        $("sysStatus").textContent = "Service Offline";
+        $("healthOut").textContent = String(err);
       }
     }
 
-    async function get(path) {
-      const r = await fetch(BASE + path, { headers: { "X-API-Key": $("apiKey").value } });
-      const t = await r.text();
-      let body; try { body = JSON.parse(t); } catch { throw new Error(t || r.status); }
-      if (!r.ok) throw new Error(body.error || body.detail || body.status || r.status);
-      return body;
+    async function loadCampaigns() {
+      const sel = $("campaignSelect");
+      sel.innerHTML = "<option>Loading demo campaigns…</option>";
+      try {
+        const list = await apiFetch("/campaigns?limit=50");
+        campaignsCache = list;
+        if (!list || list.length === 0) {
+          sel.innerHTML = "<option value=''>No campaigns found. Click '⚡ Seed Demo Data' above.</option>";
+          $("campaignDetails").style.display = "none";
+          return;
+        }
+        sel.innerHTML = list.map(c => `<option value="${c.id}">${c.name} (${c.id})</option>`).join("");
+        onCampaignChange();
+      } catch (err) {
+        sel.innerHTML = "<option value=''>Failed to load campaigns</option>";
+      }
     }
 
-    async function post(path, body) {
-      const r = await fetch(BASE + path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-API-Key": $("apiKey").value },
-        body: JSON.stringify(body),
-      });
-      const t = await r.text();
-      let parsed; try { parsed = JSON.parse(t); } catch { throw new Error(t || r.status); }
-      if (!r.ok) throw new Error(parsed.error || parsed.detail || parsed.status || r.status);
-      return parsed;
+    async function onCampaignChange() {
+      const id = $("campaignSelect").value;
+      if (!id) return;
+      const c = campaignsCache.find(x => x.id === id);
+      if (c) {
+        $("campaignDetails").style.display = "block";
+        $("campName").textContent = c.name;
+        $("campObjective").textContent = "Objective: " + c.objective;
+        $("campChannel").textContent = "Channel: " + c.channel;
+        $("campAudience").textContent = c.audience_size ? c.audience_size.toLocaleString() : "—";
+      }
+
+      // Fetch campaign analytics for rates
+      try {
+        const analytics = await apiFetch(`/campaigns/${encodeURIComponent(id)}/analytics`);
+        const metrics = analytics.metrics || [];
+        const findVal = (name) => {
+          const m = metrics.find(x => x.metric_name === name);
+          return m ? (m.value * 100).toFixed(1) + "%" : "—";
+        };
+        $("campOpenRate").textContent = findVal("open_rate");
+        $("campClickRate").textContent = findVal("click_rate");
+        $("campConvRate").textContent = findVal("conversion_rate");
+      } catch {
+        $("campOpenRate").textContent = "—";
+        $("campClickRate").textContent = "—";
+        $("campConvRate").textContent = "—";
+      }
     }
 
-    function sendEvent() {
-      return run(() => post("/events", {
-        event_id: "evt_" + Date.now(),
-        customer_id: $("cust").value,
-        channel: $("channel").value,
-        event_type: $("etype").value,
-        timestamp: new Date().toISOString(),
-        metadata: { source: "index.html" },
-      }));
+    async function runAnalysis(endpoint) {
+      const id = $("campaignSelect").value;
+      if (!id) {
+        alert("Please select a campaign first or seed demo data.");
+        return;
+      }
+
+      $("aiEmptyState").style.display = "none";
+      $("aiResult").style.display = "none";
+      $("aiLoading").style.display = "block";
+      $("analyzeBtn").disabled = true;
+      $("recBtn").disabled = true;
+
+      try {
+        const res = await apiFetch(`/campaigns/${encodeURIComponent(id)}/${endpoint}`, { method: "POST" });
+        const analysis = res.analysis || {};
+        
+        $("aiLoading").style.display = "none";
+        $("aiResult").style.display = "block";
+
+        // AI Engine Badge
+        const isLlm = analysis.source === "llm";
+        const badge = $("aiEngineBadge");
+        badge.style.display = "inline-flex";
+        badge.className = "ai-badge " + (isLlm ? "llm" : "");
+        badge.textContent = isLlm ? "AI Provider: LLM" : "Engine: Rule-Based Fallback";
+
+        $("aiConfidenceText").textContent = "Confidence Score: " + (analysis.confidence ? (analysis.confidence * 100).toFixed(0) + "%" : "High");
+
+        // Facts list
+        const facts = analysis.facts || [];
+        $("factsList").innerHTML = facts.length ? facts.map(f => `<li class="bullet-item">${f}</li>`).join("") : `<li class="bullet-item">No specific facts extracted.</li>`;
+
+        // Recommendations list
+        const recs = analysis.recommendations || [];
+        $("recsList").innerHTML = recs.length ? recs.map(r => `<li class="bullet-item rec">💡 ${r}</li>`).join("") : `<li class="bullet-item rec">No recommendations available.</li>`;
+
+        $("rawAiJson").textContent = JSON.stringify(res, null, 2);
+      } catch (err) {
+        $("aiLoading").style.display = "none";
+        $("aiEmptyState").style.display = "block";
+        alert("AI Analysis Error: " + err.message);
+      } finally {
+        $("analyzeBtn").disabled = false;
+        $("recBtn").disabled = false;
+      }
     }
 
-    function sendBatch() {
-      const id = "evt_batch_" + Date.now();
-      const cust = $("cust").value || "cust_000001";
-      return run(() => post("/events/batch", {
-        events: [
-          { event_id: id, customer_id: cust, channel: "email", event_type: "open", timestamp: new Date().toISOString(), metadata: {} },
-          { event_id: id, customer_id: cust, channel: "email", event_type: "open", timestamp: new Date().toISOString(), metadata: {} },
-        ],
-      }));
+    async function seedDemoData() {
+      const btn = $("seedBtn");
+      btn.disabled = true;
+      btn.textContent = "Seeding data…";
+      try {
+        const res = await apiFetch("/system/seed", { method: "POST" });
+        alert("Success: " + (res.message || "Demo data populated."));
+        await loadCampaigns();
+        await checkHealth();
+      } catch (err) {
+        alert("Seeding failed: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "⚡ Seed Demo Data";
+      }
     }
 
-    function recommend() {
-      return run(() => post("/audience/recommend", {
-        objective: "conversion",
-        channel: $("achannel").value,
-        conditions: { max_days_inactive: 30 },
-        audience_size: parseInt($("asize").value, 10) || 20,
-      }));
+    async function sendTestEvent() {
+      const cust = $("custInput").value.trim() || "cust_000001";
+      const channel = $("channelInput").value;
+      const event_type = $("eventInput").value;
+      try {
+        const res = await apiFetch("/events", {
+          method: "POST",
+          body: JSON.stringify({
+            event_id: "evt_" + Date.now(),
+            customer_id: cust,
+            channel: channel,
+            event_type: event_type,
+            timestamp: new Date().toISOString(),
+            metadata: { source: "console" }
+          })
+        });
+        alert(`Event accepted: ${res.event_id} (Status: ${res.status})`);
+      } catch (err) {
+        alert("Event failed: " + err.message);
+      }
     }
+
+    async function lookupCustomer() {
+      const id = $("lookupCust").value.trim();
+      if (!id) return;
+      $("customerOut").textContent = "Loading customer…";
+      try {
+        const c = await apiFetch("/customers/" + encodeURIComponent(id));
+        $("customerOut").textContent = JSON.stringify(c, null, 2);
+      } catch (err) {
+        $("customerOut").textContent = "Customer error: " + err.message;
+      }
+    }
+
+    // Auto initialize on load
+    window.addEventListener("DOMContentLoaded", () => {
+      checkHealth();
+      loadCampaigns();
+    });
   </script>
 </body>
 </html>

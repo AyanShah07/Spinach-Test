@@ -1,8 +1,15 @@
 # MarTech Intelligence & Campaign Decision Engine
 
-A working demo for durable event ingestion, customer engagement scoring, audience previews, and grounded campaign analysis. FastAPI + PostgreSQL + Redis Streams power a Next.js console; the backend also includes a lightweight HTML console.
+A self-contained platform for durable event ingestion, customer engagement scoring, audience previews, and grounded AI campaign analysis. FastAPI + PostgreSQL + Redis Streams power an integrated AI console served directly by the backend at `/`.
 
-## Run with Docker
+## Deployment on Render (All-in-One Service)
+
+The service runs as a single, free-tier Docker Web Service on Render with embedded PostgreSQL and Redis:
+1. Connect your repository to Render via Blueprint (`render.yaml`) or create a **Web Service** with Docker runtime (`./backend/Dockerfile`).
+2. Optional: set `OPENROUTER_API_KEY` for live LLM campaign evaluation (defaults to deterministic rule-based fallback).
+3. The container automatically initializes local PostgreSQL and Redis, applies migrations, seeds demo campaigns, and serves the UI at root `/`.
+
+## Run with Docker Locally
 
 ```bash
 cd backend
@@ -10,22 +17,10 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The API image runs Alembic migrations before startup. PostgreSQL and Redis data use named volumes. The embedded worker is enabled by default; the demo uses rule-based AI fallback unless a provider is explicitly configured.
-
-- Backend console: http://localhost:8000/
+- Backend AI Console: http://localhost:8000/
 - API documentation: http://localhost:8000/docs
-- Readiness: http://localhost:8000/api/v1/system/health
-- Liveness: http://localhost:8000/api/v1/system/live
-
-Start the richer frontend in another terminal (Node 24 recommended):
-
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-Open http://localhost:3000. The browser calls a same-origin `/api/backend` proxy, so backend hostnames and CORS settings do not need to be embedded in the client. Set `BACKEND_URL` in `frontend/.env.local` if the API uses another address.
+- Health check: http://localhost:8000/api/v1/system/health
+- Live check: http://localhost:8000/api/v1/system/live
 
 ## Run without Docker
 
@@ -135,14 +130,5 @@ alembic check
 
 Without `TEST_*` URLs, tests use SQLite/fakeredis and explicitly skip PostgreSQL row-lock cases. Use an isolated test database; tests need permission to create/drop temporary schemas. They do not truncate your application tables.
 
-```bash
-cd frontend
-npm ci
-npm run lint
-npm run typecheck
-npm run build
-npm start
-```
-
-GitHub Actions runs real PostgreSQL/Redis tests, migration drift checks, and frontend checks.
+GitHub Actions runs real PostgreSQL/Redis tests and migration drift checks.
 
