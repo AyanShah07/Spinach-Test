@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MarTech Intelligence</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; max-width: 880px; margin: 24px auto; padding: 0 16px; background: #0f172a; color: #e2e8f0; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    p.sub { color: #94a3b8; margin-top: 0; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+    button, .tab { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+    button.primary { background: #2563eb; border-color: #2563eb; }
+    button:disabled { opacity: 0.6; }
+    .tab.active { background: #2563eb; border-color: #2563eb; }
+    section { display: none; background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 16px; }
+    section.active { display: block; }
+    label { display: block; font-size: 12px; color: #94a3b8; margin: 10px 0 4px; }
+    input { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; }
+    pre { background: #020617; padding: 12px; border-radius: 6px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>MarTech Intelligence</h1>
+  <p class="sub">Simple demo UI · API base <code id="baseLabel"></code> · <a href="/docs" style="color:#93c5fd">OpenAPI</a></p>
+  <details><summary>Connection settings</summary><label for="apiKey">API key (if configured)</label><input id="apiKey" type="password" autocomplete="off" /></details>
+  <nav>
+    <button class="tab active" data-tab="health">Health</button>
+    <button class="tab" data-tab="ingest">Ingest</button>
+    <button class="tab" data-tab="batch">Batch</button>
+    <button class="tab" data-tab="customer">Customer</button>
+    <button class="tab" data-tab="audience">Audience</button>
+    <button class="tab" data-tab="analyze">AI analyze</button>
+    <button class="tab" data-tab="dlq">DLQ</button>
+  </nav>
+
+  <section id="health" class="active">
+    <p>GET /api/v1/system/health</p>
+    <button class="primary" onclick="run(() => get('/system/health'))">Check health</button>
+  </section>
+
+  <section id="ingest">
+    <p>POST /api/v1/events</p>
+    <label>Customer ID</label><input id="cust" value="cust_000001" />
+    <div class="row">
+      <div><label>Channel</label><input id="channel" value="email" /></div>
+      <div><label>Event type</label><input id="etype" value="open" /></div>
+    </div>
+    <p><button class="primary" onclick="sendEvent()">Send event</button></p>
+  </section>
+
+  <section id="batch">
+    <p>POST /api/v1/events/batch (2 sample events, one duplicate id)</p>
+    <button class="primary" onclick="sendBatch()">Send batch</button>
+  </section>
+
+  <section id="customer">
+    <p>GET /api/v1/customers/{id}</p>
+    <label>Customer ID</label><input id="cust2" value="cust_000001" />
+    <p><button class="primary" onclick="run(() => get('/customers/' + encodeURIComponent($('cust2').value)))">Load customer</button></p>
+  </section>
+
+  <section id="audience">
+    <p>POST /api/v1/audience/recommend</p>
+    <div class="row">
+      <div><label>Channel</label><input id="achannel" value="email" /></div>
+      <div><label>Size</label><input id="asize" value="20" /></div>
+    </div>
+    <p><button class="primary" onclick="recommend()">Recommend</button></p>
+  </section>
+
+  <section id="analyze">
+    <p>POST /api/v1/campaigns/{id}/analyze</p>
+    <label>Campaign ID</label><input id="camp" value="camp_000" />
+    <p><button class="primary" onclick="run(() => post('/campaigns/' + encodeURIComponent($('camp').value) + '/analyze', {}))">Analyze</button></p>
+  </section>
+
+  <section id="dlq">
+    <p>GET /api/v1/system/dlq</p>
+    <button class="primary" onclick="run(() => get('/system/dlq'))">List DLQ</button>
+    <label>Replay DLQ id</label><input id="dlqid" value="1" />
+    <p><button onclick="run(() => post('/system/dlq/' + encodeURIComponent($('dlqid').value) + '/replay', {}))">Replay</button></p>
+  </section>
+
+  <h3>Response</h3>
+  <pre id="out">Ready.</pre>
+
+  <script>
+    const BASE = "/api/v1";
+    document.getElementById("baseLabel").textContent = BASE;
+    const $ = (id) => document.getElementById(id);
+
+    document.querySelectorAll(".tab").forEach((btn) => {
+      btn.onclick = () => {
+        document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll("section").forEach((s) => s.classList.remove("active"));
+        btn.classList.add("active");
+        $(btn.dataset.tab).classList.add("active");
+      };
+    });
+
+    async function run(fn) {
+      $("out").textContent = "Loading…";
+      try {
+        const data = await fn();
+        $("out").textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        $("out").textContent = String(e);
+      }
+    }
+
+    async function get(path) {
+      const r = await fetch(BASE + path, { headers: { "X-API-Key": $("apiKey").value } });
+      const t = await r.text();
+      let body; try { body = JSON.parse(t); } catch { throw new Error(t || r.status); }
+      if (!r.ok) throw new Error(body.error || body.detail || body.status || r.status);
+      return body;
+    }
+
+    async function post(path, body) {
+      const r = await fetch(BASE + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-API-Key": $("apiKey").value },
+        body: JSON.stringify(body),
+      });
+      const t = await r.text();
+      let parsed; try { parsed = JSON.parse(t); } catch { throw new Error(t || r.status); }
+      if (!r.ok) throw new Error(parsed.error || parsed.detail || parsed.status || r.status);
+      return parsed;
+    }
+
+    function sendEvent() {
+      return run(() => post("/events", {
+        event_id: "evt_" + Date.now(),
+        customer_id: $("cust").value,
+        channel: $("channel").value,
+        event_type: $("etype").value,
+        timestamp: new Date().toISOString(),
+        metadata: { source: "index.html" },
+      }));
+    }
+
+    function sendBatch() {
+      const id = "evt_batch_" + Date.now();
+      const cust = $("cust").value || "cust_000001";
+      return run(() => post("/events/batch", {
+        events: [
+          { event_id: id, customer_id: cust, channel: "email", event_type: "open", timestamp: new Date().toISOString(), metadata: {} },
+          { event_id: id, customer_id: cust, channel: "email", event_type: "open", timestamp: new Date().toISOString(), metadata: {} },
+        ],
+      }));
+    }
+
+    function recommend() {
+      return run(() => post("/audience/recommend", {
+        objective: "conversion",
+        channel: $("achannel").value,
+        conditions: { max_days_inactive: 30 },
+        audience_size: parseInt($("asize").value, 10) || 20,
+      }));
+    }
+  </script>
+</body>
+</html>
