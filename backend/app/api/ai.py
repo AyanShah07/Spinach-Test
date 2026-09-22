@@ -17,6 +17,25 @@ async def get_session(request: Request):
     async with request.app.state.session_factory() as session:
         yield session
 
+def get_effective_llm(request: Request):
+    """Return user-specified LLM if provided in request headers, else app default."""
+    ai_key = request.headers.get("x-ai-key", "").strip()
+    ai_provider = (request.headers.get("x-ai-provider", "")).strip().lower()
+
+    if ai_key:
+        if ai_provider == "gemini":
+            from app.ai.adapters.gemini_adapter import GeminiAdapter
+            return GeminiAdapter(api_key=ai_key)
+        if ai_provider == "groq":
+            from app.ai.adapters.groq_adapter import GroqAdapter
+            return GroqAdapter(api_key=ai_key)
+        if ai_provider == "openrouter":
+            from app.ai.adapters.openrouter_adapter import OpenRouterAdapter
+            return OpenRouterAdapter(api_key=ai_key)
+
+    return getattr(request.app.state, "llm", None)
+
+
 async def analyze(campaign_id, request, session, prompt):
     repo = CampaignRepo(session)
     campaign = await repo.get(campaign_id)
@@ -27,7 +46,8 @@ async def analyze(campaign_id, request, session, prompt):
         {"id": campaign.id, "objective": campaign.objective, "channel": campaign.channel,
          "status": campaign.status, "audience_size": campaign.audience_size},
         [{"metric_name": m.metric_name, "value": m.value} for m in metrics])
-    response = await request.app.state.ai_service.analyze(request.app.state.llm, prompt, context)
+    llm = get_effective_llm(request)
+    response = await request.app.state.ai_service.analyze(llm, prompt, context)
     return AnalyzeResponse(campaign_id=campaign_id, analysis=response)
 
 @router.post("/{campaign_id}/analyze", response_model=AnalyzeResponse)

@@ -18,10 +18,12 @@ CHANNELS = ["email", "sms", "whatsapp", "push", "web"]
 TYPES = ["open", "click", "purchase", "unsubscribe", "complaint", "send", "delivered", "view"]
 OBJECTIVES = ["conversion", "retention", "winback", "awareness", "upsell"]
 
-async def generate(customers, events, campaigns, seed, as_of):
+async def generate(customers, events, campaigns, seed, as_of, override_db_url: str | None = None):
     rng = random.Random(seed)
-    engine = create_async_engine(get_settings().DATABASE_URL)
+    db_url = override_db_url or get_settings().DATABASE_URL
+    engine = create_async_engine(db_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+
     try:
         async with sessions() as session:
             for start in range(0, customers, 500):

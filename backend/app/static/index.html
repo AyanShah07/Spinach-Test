@@ -295,6 +295,14 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.4; }
     }
+
+    /* Live Config Tab */
+    .svc-status { font-size: 0.78rem; font-weight: 600; }
+    .svc-status.idle { color: var(--text-muted); }
+    .svc-status.checking { color: var(--warning); }
+    .svc-status.ok { color: var(--success); }
+    .svc-status.error { color: var(--danger); }
+    .seed-result-box { display: none; margin-top: 12px; font-size: 0.85rem; color: var(--success); }
   </style>
 </head>
 <body>
@@ -412,6 +420,63 @@
       </div>
     </section>
 
+    <!-- TAB: Live Config -->
+    <section id="live-config-tab">
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">🔑 Live Config — Test with Real Services</div>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0;">
+          Provide API keys to test against real infrastructure. Keys are sent to the backend only during validation/seeding and are <strong>never stored</strong>.
+          Without keys, everything runs on the embedded local demo (PostgreSQL &amp; Redis in-container).
+        </p>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title"><span>🤖 AI Provider</span> <span id="aiSvcStatus" class="svc-status idle">○ Unconfigured</span></div>
+        <label for="liveAiProvider">Provider</label>
+        <select id="liveAiProvider" style="max-width:280px; margin-bottom:10px;">
+          <option value="groq">Groq (llama-3.1-8b-instant) — free tier</option>
+          <option value="gemini">Google Gemini (gemini-2.5-flash)</option>
+          <option value="openrouter">OpenRouter (gpt-4o-mini)</option>
+        </select>
+        <label for="liveAiKey">API Key</label>
+        <input id="liveAiKey" type="password" placeholder="gsk_... / AIza... / sk-or-..." style="max-width:440px;" />
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title"><span>🗄️ Supabase (PostgreSQL)</span> <span id="dbSvcStatus" class="svc-status idle">○ Unconfigured</span></div>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:10px;">
+          Tables are auto-created on first seed. Get your URL from <a href="https://supabase.com/dashboard" target="_blank" rel="noopener" style="color:#60a5fa;">supabase.com/dashboard</a> → Project Settings → API.
+        </p>
+        <label for="liveSupabaseUrl">Project URL</label>
+        <input id="liveSupabaseUrl" type="url" placeholder="https://xxxx.supabase.co" style="max-width:380px;" />
+        <label for="liveSupabasePass">Database Password</label>
+        <input id="liveSupabasePass" type="password" placeholder="Your DB password" style="max-width:380px;" />
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title"><span>⚡ Upstash Redis</span> <span id="redisSvcStatus" class="svc-status idle">○ Unconfigured</span></div>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:10px;">
+          Paste the <code>rediss://</code> URL from <a href="https://console.upstash.com/" target="_blank" rel="noopener" style="color:#60a5fa;">console.upstash.com</a> → your database → Connect → Redis URL.
+        </p>
+        <label for="liveRedisUrl">Upstash Redis URL</label>
+        <input id="liveRedisUrl" type="password" placeholder="rediss://default:...@...upstash.io:6379" style="max-width:560px;" />
+      </div>
+
+      <div class="card">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <button class="primary" id="validateBtn" onclick="validateLiveConfig()">🔍 Validate Credentials</button>
+          <button class="purple" id="seedLiveBtn" onclick="seedLiveData()">🚀 Generate Live Data</button>
+          <button onclick="clearLiveConfig()">✕ Clear</button>
+        </div>
+        <p style="font-size:0.75rem; color:var(--text-muted);">
+          <strong>Validate</strong> — pings each service, no data written. &nbsp;
+          <strong>Generate Live Data</strong> — seeds 100 customers, 10 campaigns, 500 events into configured services.
+          If nothing is configured, falls back to local demo seed.
+        </p>
+        <div id="seedLiveResult" class="seed-result-box"></div>
+      </div>
+    </section>
+
     <!-- TAB 2: Customers & Live Ingestion -->
     <section id="customers-tab">
       <div class="dashboard-grid" style="margin-bottom:20px;">
@@ -506,8 +571,9 @@
 
       <div class="card">
         <div class="card-title">API Key (Optional)</div>
-        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;">If <code>API_KEY</code> is configured in backend environment variables, provide it here:</p>
-        <input id="apiKey" type="password" placeholder="Enter API key if required" style="max-width:400px;" />
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;">If <code>API_KEY</code> is configured in backend environment variables, provide it here to authenticate API calls from this console:</p>
+        <input id="apiKey" type="password" placeholder="Enter backend API key if required" style="max-width:400px;" />
+        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:8px;">To configure AI / Supabase / Upstash keys, use the <strong>🔑 Live Config</strong> tab.</p>
       </div>
     </section>
   </div>
@@ -516,6 +582,122 @@
     const BASE = "/api/v1";
     const $ = (id) => document.getElementById(id);
     let campaignsCache = [];
+
+    // ── Live Config state (in-memory only, never sent to server except during validate/seed) ──
+    let liveConfig = { ai_provider: null, ai_api_key: null, supabase_url: null, supabase_db_password: null, upstash_redis_url: null };
+
+    function readLiveConfig() {
+      liveConfig = {
+        ai_provider:         $("liveAiProvider")?.value || null,
+        ai_api_key:          $("liveAiKey")?.value.trim() || null,
+        supabase_url:        $("liveSupabaseUrl")?.value.trim() || null,
+        supabase_db_password: $("liveSupabasePass")?.value.trim() || null,
+        upstash_redis_url:   $("liveRedisUrl")?.value.trim() || null,
+      };
+      // Strip empty strings to null
+      Object.keys(liveConfig).forEach(k => { if (!liveConfig[k]) liveConfig[k] = null; });
+      return liveConfig;
+    }
+
+    function setStatus(elId, status, text) {
+      const el = $(elId);
+      if (!el) return;
+      el.className = "svc-status " + status;
+      const icons = { idle: "○", checking: "⏳", ok: "✓", error: "✗" };
+      el.textContent = (icons[status] || "") + " " + text;
+    }
+
+    async function validateLiveConfig() {
+      const cfg = readLiveConfig();
+      const btn = $("validateBtn");
+      btn.disabled = true;
+      btn.textContent = "Validating…";
+
+      // Reset status badges
+      setStatus("aiSvcStatus", "checking", "Checking…");
+      setStatus("dbSvcStatus",  "checking", "Checking…");
+      setStatus("redisSvcStatus", "checking", "Checking…");
+
+      // If a field is empty, reset to idle immediately
+      if (!cfg.ai_api_key) setStatus("aiSvcStatus", "idle", "Unconfigured");
+      if (!cfg.supabase_url) setStatus("dbSvcStatus", "idle", "Unconfigured");
+      if (!cfg.upstash_redis_url) setStatus("redisSvcStatus", "idle", "Unconfigured");
+
+      try {
+        const res = await fetch(BASE + "/system/configure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cfg),
+        });
+        const data = await res.json();
+
+        if (cfg.ai_api_key) {
+          const ok = data.ai_status === "ok";
+          setStatus("aiSvcStatus", ok ? "ok" : "error", ok ? "Connected" : data.ai_status);
+        }
+        if (cfg.supabase_url) {
+          const ok = data.db_status === "ok";
+          setStatus("dbSvcStatus", ok ? "ok" : "error", ok ? "Connected" : data.db_status);
+        }
+        if (cfg.upstash_redis_url) {
+          const ok = data.redis_status === "ok";
+          setStatus("redisSvcStatus", ok ? "ok" : "error", ok ? "Connected" : data.redis_status);
+        }
+      } catch (err) {
+        ["aiSvcStatus", "dbSvcStatus", "redisSvcStatus"].forEach(id => setStatus(id, "error", "Network error"));
+        alert("Validation request failed: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "🔍 Validate Credentials";
+      }
+    }
+
+    async function seedLiveData() {
+      const cfg = readLiveConfig();
+      const btn = $("seedLiveBtn");
+      btn.disabled = true;
+      btn.textContent = "Generating data…";
+      $("seedLiveResult").style.display = "none";
+
+      try {
+        const res = await fetch(BASE + "/system/seed-live", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cfg),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || data.error || "Seed failed");
+
+        const resultBox = $("seedLiveResult");
+        resultBox.style.display = "block";
+        const services = data.seeded_services || [];
+        const isLive = services.some(s => s !== "local_demo");
+        resultBox.innerHTML = `
+          <strong>${isLive ? "🚀 Live Data Generated!" : "✅ Local Demo Data Seeded"}</strong><br>
+          ${data.message}<br>
+          <span style="font-size:0.75rem; color:#a7f3d0; margin-top:6px; display:block;">
+            Services: ${services.join(" · ") || "none"}
+          </span>
+        `;
+        // Refresh campaigns list on AI tab
+        await loadCampaigns();
+      } catch (err) {
+        alert("Seed failed: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "🚀 Connect & Generate Live Data";
+      }
+    }
+
+    function clearLiveConfig() {
+      ["liveAiKey", "liveSupabaseUrl", "liveSupabasePass", "liveRedisUrl"].forEach(id => {
+        if ($(id)) $(id).value = "";
+      });
+      setStatus("aiSvcStatus", "idle", "Unconfigured");
+      setStatus("dbSvcStatus", "idle", "Unconfigured");
+      setStatus("redisSvcStatus", "idle", "Unconfigured");
+      $("seedLiveResult").style.display = "none";
+    }
 
     // Tab Navigation
     document.querySelectorAll(".tab-btn").forEach((btn) => {
