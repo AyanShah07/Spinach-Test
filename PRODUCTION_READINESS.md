@@ -1,146 +1,164 @@
 # Production Readiness & Architecture Roadmap
 
-This document outlines the gap between the current all-in-one prototype and an enterprise-grade production deployment for the **MarTech Intelligence & Campaign Decision Engine**. It details current capabilities, required changes, operational costs, a step-by-step Pull Request (PR) roadmap, and the production target architecture.
+> An enterprise architectural evaluation and transition roadmap for the **MarTech Intelligence & Campaign Decision Engine**, structured using the **4W & 1H (What, Why, Who, Where, How)** engineering framework.
 
 ---
 
-## 1. Executive Summary: What It Is vs. What It Actually Does
+## 4W & 1H Framework Executive Summary
 
-| Dimension | Current Prototype / Demo | Production Target |
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  WHAT:   Enterprise migration plan from all-in-one demo to scalable cloud   │
+│  WHY:    Fault isolation, 50,000+ events/sec throughput, zero data loss SLA │
+│  WHO:    Platform Engineers, DevOps/SREs, Lifecycle Marketers, SecOps       │
+│  WHERE:  AWS / GCP Multi-AZ, VPC private subnets, Kubernetes, Edge WAF      │
+│  HOW:    5-phase Pull Request (PR) roadmap, OTel metrics, Kafka/PgBouncer   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 1. WHAT: Capabilities & Production Gap Analysis
+
+### What It Is Today vs. What It Actually Does
+
+| Dimension | Current Prototype / Demo | What It Actually Does Today | Production Target |
+| :--- | :--- | :--- | :--- |
+| **Deployment Model** | Single Docker container on Render Free Tier. | Runs FastAPI, embedded Postgres, embedded Redis, and background worker in 1 container. | Decoupled microservices on Kubernetes (EKS/GKE) or AWS ECS. |
+| **Database** | Embedded PostgreSQL daemon inside container. | Stores events, outbox, customers, and campaigns on an ephemeral container filesystem. | Managed Multi-AZ PostgreSQL 16+ (AWS Aurora / Cloud SQL) with automated failover and PITR. |
+| **Message Broker** | Embedded local Redis server. | Powers Redis Streams (`events:stream`) for worker consumption. | Managed Redis Cluster (AWS ElastiCache) or Apache Kafka for multi-partition streaming. |
+| **Worker Engine** | In-process `asyncio.create_task`. | Asynchronously processes outbox rows, calculates decayed scores, updates customer records. | Standalone autoscaled worker fleet scaled via KEDA based on stream consumer lag. |
+| **Throughput** | ~50–150 events/sec. | Sufficient for interactive demo and small batch testing. | 10,000–50,000+ events/sec across partitioned topics and parallel worker pools. |
+| **Fault Isolation** | Zero isolation. | If Postgres or Redis runs out of memory (512MB RAM limit), the API crashes. | Independent failure domains: API, workers, databases, and caches fail and scale independently. |
+| **Authentication** | Single static `API_KEY` header. | Simple header check, disabled in development mode. | Multi-tenant RBAC, JWT / OAuth2 bearer tokens, hashed API keys (`argon2id`), KMS secrets. |
+| **AI Evaluation** | Direct API calls to OpenRouter/Groq. | Rule-based summary fallback with in-memory process-local circuit breaker. | Distributed circuit breaker (Redis), semantic prompt cache, token budgeting, and fallback chain. |
+| **Observability** | Stdout logs + `/system/health`. | Basic health JSON response and container logs. | OpenTelemetry distributed tracing, Prometheus metrics exporter, structured JSON logs, and PagerDuty. |
+
+### What Needs to Be Changed (The Production Gaps)
+1. **Decouple the Compute Tier**: The background worker must not share process space or container lifecycles with the public HTTP API.
+2. **Externalize State**: Eliminate embedded database and Redis daemons in favor of managed, persistent, multi-AZ cloud services.
+3. **Partition Message Streaming**: Replace the single Redis stream with partitioned streams or Apache Kafka keyed by `customer_id` to enable horizontal consumer scaling.
+4. **Harden Security & Secrets**: Move away from plaintext `.env` variables to KMS/Vault secret injection; replace single API keys with scoped, multi-tenant tokens.
+5. **Implement Data Lifecycle Policies**: Add table partitioning to `events` and automate outbox pruning and cold-storage S3 Parquet archiving.
+
+---
+
+## 2. WHY: Architectural Rationale & Motivations
+
+### Why Decouple API and Worker Fleets?
+In the current prototype, a sudden spike in event ingestion or worker scoring can consume all CPU/RAM, causing the web API to fail health checks and restart. Decoupling ensures:
+- Ingestion APIs remain responsive even during heavy background processing.
+- Workers can be scaled independently using KEDA based strictly on queue backlog (`xlen` / `pending`).
+- Deployments to the web API do not terminate in-flight event processing tasks.
+
+### Why Managed Multi-AZ PostgreSQL with PgBouncer?
+- **Zero Data Loss**: Automated point-in-time recovery (PITR) and synchronous multi-AZ replication protect against hardware failure.
+- **Connection Saturation**: Hundreds of async worker tasks can quickly exhaust PostgreSQL's `max_connections`. Deploying PgBouncer in transaction-pooling mode allows thousands of concurrent clients to share a lean database pool.
+- **Read Scaling**: Heavy analytics queries (`/campaigns/{id}/analytics`) can be offloaded to read replicas without contending with transactional ingestion writes.
+
+### Why Stream Partitioning by Customer ID?
+To calculate engagement scores accurately, all events for a given customer must be processed in chronological order. 
+- By partitioning streams (or Kafka topics) with `hash(customer_id) % num_partitions`, events for the same customer always route to the same partition/worker.
+- This eliminates the need for cross-worker distributed locking while allowing dozens of workers to process different customers in parallel.
+
+### Why Distributed Circuit Breakers & Semantic Caching for AI?
+- **Cost Protection**: Semantic caching in Redis prevents paying LLM token costs for identical campaign metric profiles.
+- **Resilience**: An in-memory circuit breaker only protects a single container. A distributed Redis-backed circuit breaker immediately shields the entire API cluster when an upstream AI provider experiences outages or elevated latencies.
+
+---
+
+## 3. WHO: Roles, Ownership & Stakeholders
+
+| Stakeholder / Team | Responsibilities in Production | Key Deliverables & KPIs |
 | :--- | :--- | :--- |
-| **Deployment Model** | Single self-contained Docker container on Render free tier. | Decoupled microservices on Kubernetes (EKS/GKE) or AWS ECS. |
-| **Database** | Embedded local PostgreSQL instance inside container (single process, ephemeral disk). | Managed Multi-AZ PostgreSQL (AWS Aurora / Cloud SQL) with PgBouncer, automated failover, and point-in-time recovery (PITR). |
-| **Message Broker** | Embedded local Redis server running Redis Streams. | Managed Redis Cluster (AWS ElastiCache / Redis Enterprise) or Apache Kafka for multi-partition streaming. |
-| **Workers** | In-process `asyncio.create_task` embedded inside FastAPI. | Standalone autoscaled worker fleet scaled via KEDA based on stream consumer group lag. |
-| **Throughput Capacity** | ~50–150 events/sec sustained (bounded by container CPU/RAM and single worker loop). | 10,000–50,000+ events/sec across partitioned topics and parallel worker pools. |
-| **Fault Isolation** | None: If PostgreSQL or Redis crashes, the entire container and API crash. | Strict fault isolation: API, worker fleet, database, and cache scale and fail independently. |
-| **Authentication** | Single static `API_KEY` header check; optional in development mode. | Multi-tenant RBAC, JWT / OAuth2 bearer tokens, hashed API keys (`argon2id`), and secret management via Vault/AWS Secrets Manager. |
-| **AI Evaluation** | Direct API calls to OpenRouter/Groq with in-memory process-local circuit breaker. | Distributed circuit breaker, semantic caching (Redis vector store), model fallback chain, prompt validation, and rate/budget caps. |
-| **Observability** | Stdout logging and `/system/health` polling. | OpenTelemetry distributed tracing, Prometheus metrics exporter, structured JSON logging, and PagerDuty alert rules. |
+| **Platform & Data Engineers** | Owns event ingestion pipelines, database schemas, Alembic migrations, and queue partitioning. | Pipeline latency < 100ms; zero data loss; 99.99% ingestion uptime. |
+| **DevOps & Site Reliability (SRE)** | Manages Kubernetes/ECS infrastructure, PgBouncer, Redis clusters, CI/CD pipelines, and alerting. | Mean time to detect (MTTD) < 5 min; automated multi-AZ failover; disaster recovery drills. |
+| **Security & SecOps** | Manages KMS/Vault secret rotation, RBAC policies, network segmentation, and penetration testing. | SOC2 / GDPR compliance; zero plaintext secrets; rate-limiting enforcement. |
+| **Growth & Lifecycle Marketers** | Consumes campaign analytics, triggers AI decision evaluations, and schedules audiences. | Grounded campaign insights; accurate audience reach estimates; frequency cap protection. |
 
 ---
 
-## 2. What Needs to Be Changed: Gap Analysis
+## 4. WHERE: Infrastructure Topology & Network Placement
 
-### A. Infrastructure & Compute
-1. **Decouple API and Worker Processes**:
-   - In production, running background workers inside the web server process risks dropped events during web restarts, deploys, or health-check kills.
-   - Separate into two distinct artifacts:
-     - `martech-api`: Handles HTTP ingress, validates events, writes to DB outbox, serves UI and queries.
-     - `martech-worker`: Reads outbox, publishes to stream, consumes events, computes scores, and updates customer timelines.
-2. **Externalize Databases & Caches**:
-   - Replace the embedded Postgres daemon in [backend/scripts/start.sh](file:///Users/ayanshah/Desktop%20Folders/Spinach%20Test/backend/scripts/start.sh) with a managed PostgreSQL 16+ instance.
-   - Replace embedded Redis with a managed Redis Cluster or Amazon ElastiCache with multi-AZ replication.
-3. **Container Resource Allocation**:
-   - Current limits: Render free tier (512 MB RAM, shared vCPU).
-   - Production target: 2+ replicas of API (1 GB RAM, 0.5 vCPU each), 3+ replicas of Worker (1–2 GB RAM, 1 vCPU each).
+### Production Network Topology
+- **Edge Layer**: Cloudflare WAF / CDN terminates public TLS, enforces DDoS protection, and rate-limits abusive IPs.
+- **Public Subnet**: Application Load Balancer (ALB) routes traffic across private availability zones.
+- **Private App Subnet**: Stateless FastAPI API replicas and autoscaled Event Workers running in Kubernetes (EKS/GKE) or AWS ECS.
+- **Private Data Subnet**: Multi-AZ PostgreSQL Primary + Read Replica, and Redis Cluster / Kafka broker. No public internet access.
 
-### B. Scalability & Streaming
-1. **Stream Partitioning**:
-   - The current Redis Streams setup uses a single stream (`events:stream`). This creates an ordering bottleneck when scaling to multiple workers.
-   - **Production change**: Partition events across streams or swap to Apache Kafka using `app/queue/kafka_adapter.py` keyed by `customer_id`. This guarantees per-customer FIFO ordering while allowing parallel processing across dozens of consumer nodes.
-2. **Database Connection Pooling**:
-   - Direct connection from hundreds of async worker tasks can exhaust PostgreSQL's `max_connections`.
-   - Deploy PgBouncer in transaction-pooling mode between FastAPI/workers and PostgreSQL.
-
-### C. Security & Compliance
-1. **Secrets Management**:
-   - Remove environment variable plaintext storage. Inject secrets via AWS Secrets Manager, HashiCorp Vault, or Doppler.
-2. **Tenant Isolation & RBAC**:
-   - Introduce tenant IDs on all tables (`customers`, `events`, `campaigns`) with Row-Level Security (RLS) in PostgreSQL.
-   - Replace single static key with scoped API keys (`events:ingest`, `campaigns:read`, `ai:analyze`).
-3. **Network Security**:
-   - Restrict database and Redis ports to VPC private subnets.
-   - Enforce mTLS for internal service-to-service communication.
-   - Enforce Cloudflare / WAF with DDoS protection, bot detection, and rate limiting (600 requests/min per IP/token).
-
-### D. Observability & Reliability
-1. **Distributed Tracing**:
-   - Integrate OpenTelemetry (OTel) context propagation across HTTP request → Outbox row → Stream message → Worker processor → AI call.
-2. **Prometheus Metrics**:
-   - Expose `/metrics`:
-     - `events_ingested_total` (by channel, event_type)
-     - `event_processing_duration_seconds` (histogram)
-     - `stream_consumer_lag` (gauge)
-     - `dlq_events_total` (counter)
-     - `llm_request_duration_seconds` and `llm_fallback_total`
-3. **Centralized Logging**:
-   - Structured JSON logs with `trace_id`, `span_id`, `customer_id`, and `event_id` shipped to Datadog, Grafana Loki, or AWS CloudWatch.
-
----
-
-## 3. Production Architecture Diagram
+### Production Architecture Diagram
 
 ```mermaid
 flowchart TD
-    subgraph Clients["Clients & Edge"]
+    subgraph Clients["Clients & Edge Tier"]
         Web["Web Console / UI"]
         Mobile["Mobile & SDK Clients"]
         Webhooks["Third-Party Webhooks"]
-        CF["Cloudflare WAF / CDN (DDoS & TLS)"]
+        CF["Cloudflare WAF / CDN<br/>(DDoS, Bot Filter & TLS)"]
     end
 
-    subgraph Ingress["Ingress & Gateway"]
-        ALB["Application Load Balancer / API Gateway"]
+    subgraph Ingress["Ingress Tier"]
+        ALB["AWS Application Load Balancer / API Gateway"]
     end
 
-    subgraph Compute["Stateless Application Tier"]
-        subgraph APIFleet["FastAPI Cluster (Auto-scaled)"]
-            API1["API Replica 1"]
-            API2["API Replica 2"]
-            APIN["API Replica N"]
+    subgraph Compute["Private App Tier (Kubernetes / ECS)"]
+        subgraph APIFleet["FastAPI Cluster (HPA Auto-scaled)"]
+            API1["API Pod 1"]
+            API2["API Pod 2"]
+            APIN["API Pod N"]
         end
-        subgraph WorkerFleet["Worker Cluster (KEDA Auto-scaled)"]
-            W1["Event Worker 1"]
-            W2["Event Worker 2"]
-            WN["Event Worker N"]
+        subgraph WorkerFleet["Worker Fleet (KEDA Scaled on Queue Lag)"]
+            W1["Event Worker Pod 1"]
+            W2["Event Worker Pod 2"]
+            WN["Event Worker Pod N"]
         end
     end
 
     subgraph Streaming["Message & Event Streaming"]
-        Stream["Partitioned Redis Streams / Kafka<br/>(Keyed by customer_id)"]
-        DLQQueue["Dead Letter Queue (DLQ)"]
+        Stream["Partitioned Streams / Kafka Topic<br/>(Keyed by customer_id)"]
+        DLQQueue["Dead Letter Queue (DLQ Store)"]
     end
 
-    subgraph Data["Persistence Tier"]
+    subgraph Data["Private Data Tier (Multi-AZ)"]
         PgPool["PgBouncer Connection Pooler"]
-        PGPrimary[("PostgreSQL Primary (Multi-AZ)")]
+        PGPrimary[("PostgreSQL Primary (Multi-AZ Write)")]
         PGReplica[("PostgreSQL Read Replica")]
-        RedisCache[("Redis Cluster (Cache & Freq Cap)")]
+        RedisCache[("Redis Cluster (Cache, Freq Cap & Distributed Locks)")]
+        S3Cold[("S3 / GCS Cold Storage (Parquet Archives)")]
     end
 
     subgraph AI["AI Decision Tier"]
         CircuitBreaker["Distributed Circuit Breaker (Redis)"]
-        SemanticCache["Semantic Prompt Cache"]
+        SemanticCache["Semantic Prompt Cache (Redis Vector)"]
         LLMCluster["LLM Providers (OpenRouter / Groq / OpenAI)"]
-        RuleFallback["Deterministic Rule Engine"]
+        RuleFallback["Deterministic Rule-Based Engine"]
     end
 
     subgraph Observability["Observability Tier"]
         OTel["OpenTelemetry Collector"]
-        Prom["Prometheus & Grafana"]
-        Alerts["PagerDuty / Slack Alerts"]
+        Prom["Prometheus & Grafana Dashboards"]
+        Alerts["PagerDuty & Slack Alerting"]
     end
 
-    %% Edge flow
+    %% Ingress Flow
     Web --> CF
     Mobile --> CF
     Webhooks --> CF
     CF --> ALB
     ALB --> API1 & API2 & APIN
 
-    %% Ingestion flow
+    %% Ingestion Flow
     API1 & API2 & APIN -->|1. Write Event & Outbox| PgPool
     API1 & API2 & APIN -->|2. Check Freq Cap| RedisCache
     PgPool --> PGPrimary
 
-    %% Stream flow
+    %% Stream & Worker Flow
     API1 & API2 & APIN -.->|Outbox Publisher| Stream
     Stream --> W1 & W2 & WN
-    W1 & W2 & WN -->|Calculate Score & Update| PgPool
+    W1 & W2 & WN -->|Calculate Decayed Score| PgPool
     W1 & W2 & WN -->|Failed > 3 Retries| DLQQueue
 
-    %% Read Queries
+    %% Read Analytics
     API1 & API2 & APIN -->|Read Heavy Analytics| PGReplica
 
     %% AI Flow
@@ -148,6 +166,9 @@ flowchart TD
     CircuitBreaker --> SemanticCache
     SemanticCache -->|Cache Miss| LLMCluster
     CircuitBreaker -.->|Trip / Cooldown| RuleFallback
+
+    %% Data Lifecycle
+    PGPrimary -.->|Nightly Archival| S3Cold
 
     %% Telemetry
     Compute --> OTel
@@ -157,69 +178,76 @@ flowchart TD
 
 ---
 
-## 4. What PRs Will Do: Pull Request Roadmap
+## 5. HOW: Transition Roadmap & Pull Request (PR) Plan
 
-To migrate from the current code to this production architecture, work should be broken down into 5 self-contained, reviewable PRs:
+To systematically take the repository from the current all-in-one demo to production without downtime, follow this 5-stage Pull Request plan:
 
 ### PR 1: Service Decoupling & Managed Infrastructure Config
-- **Files Changed**:
+- **What**: Split the codebase into standalone API and Worker container images. Decouple embedded databases.
+- **Why**: Eliminates single-point-of-failure; allows independent autoscaling.
+- **Files Modified**:
   - `backend/Dockerfile.api` and `backend/Dockerfile.worker`
-  - `render.yaml` (or Terraform / Kubernetes manifests)
-  - `backend/app/main.py`
-- **What it does**:
-  - Separates the Docker image into an API container and a dedicated Worker container.
-  - Removes embedded postgres and redis processes from Dockerfile.
-  - Updates `main.py` so `RUN_EMBEDDED_WORKER` defaults to `false` in production.
-  - Adds healthcheck probes tailored for both services (`/live` for API, process heartbeat check for worker).
+  - `render.yaml` (or Kubernetes deployment manifests)
+  - [backend/app/main.py](file:///Users/ayanshah/Desktop%20Folders/Spinach%20Test/backend/app/main.py)
+- **Key Changes**:
+  - Remove embedded postgres and redis setup from startup scripts.
+  - Set `RUN_EMBEDDED_WORKER=false` by default in production.
+  - Add container health probes: HTTP `/live` for API, Redis heartbeat key check for workers.
 
 ### PR 2: Partitioned Event Ingestion & Kafka/Redis Cluster Adapter
-- **Files Changed**:
+- **What**: Partition message streams by `customer_id` and complete the Kafka swap contract.
+- **Why**: Scales event processing beyond the throughput limit of a single stream while preserving per-customer ordering.
+- **Files Modified**:
   - `backend/app/queue/redis_streams.py`
-  - `backend/app/queue/kafka_adapter.py`
-  - `backend/app/workers/event_worker.py`
-- **What it does**:
-  - Implements multi-partition sharding using consistent hashing on `customer_id`.
-  - Implements consumer group claim balancing and crash-recovery rebalancing.
-  - Fully wires `kafka_adapter.py` for enterprise environments requiring 10,000+ events/sec.
+  - [backend/app/queue/kafka_adapter.py](file:///Users/ayanshah/Desktop%20Folders/Spinach%20Test/backend/app/queue/kafka_adapter.py)
+  - [backend/app/workers/event_worker.py](file:///Users/ayanshah/Desktop%20Folders/Spinach%20Test/backend/app/workers/event_worker.py)
+- **Key Changes**:
+  - Implement consistent hashing on `customer_id` across $N$ stream partitions.
+  - Wire `aiokafka` into `KafkaQueue` for enterprise deployments handling > 10,000 events/sec.
 
 ### PR 3: Production Security, RBAC & Secret Management
-- **Files Changed**:
-  - `backend/app/core/security.py`
-  - `backend/app/core/config.py`
-  - `backend/app/db/models.py` (Tenant & API Key tables)
-  - `backend/migrations/versions/` (New Alembic migration)
-- **What it does**:
-  - Replaces single static `API_KEY` with multi-tenant hashed API keys (`argon2id`) supporting expiration and permission scopes (`events:write`, `campaigns:read`).
-  - Implements tenant ID filtering via SQLAlchemy event listeners or Postgres Row-Level Security (RLS).
-  - Integrates AWS Secrets Manager / Vault client for dynamic secret fetching.
+- **What**: Multi-tenant authorization, hashed API tokens, and cloud secret injection.
+- **Why**: Protects sensitive customer data, enables multi-tenant SaaS billing, and meets security standards.
+- **Files Modified**:
+  - [backend/app/core/security.py](file:///Users/ayanshah/Desktop%20Folders/Spinach%20Test/backend/app/core/security.py)
+  - [backend/app/core/config.py](file:///Users/ayanshah/Desktop%20Folders/Spinach%20Test/backend/app/core/config.py)
+  - `backend/app/db/models.py`
+  - `backend/migrations/versions/`
+- **Key Changes**:
+  - Add `Tenant` and `ApiKey` models with `argon2id` token hashing.
+  - Introduce permission scopes (`events:ingest`, `campaigns:read`, `ai:analyze`).
+  - Integrate AWS Secrets Manager / HashiCorp Vault dynamic secret fetching.
 
-### PR 4: Full Observability (OpenTelemetry, Prometheus & Logging)
-- **Files Changed**:
-  - `backend/app/main.py`
+### PR 4: Full Observability (OpenTelemetry & Prometheus)
+- **What**: Distributed tracing, metrics exporter, and structured JSON logs.
+- **Why**: Enables instant root-cause analysis during incidents and automated alerting.
+- **Files Modified**:
   - `backend/app/core/telemetry.py` (New)
-  - `backend/app/workers/event_worker.py`
+  - [backend/app/main.py](file:///Users/ayanshah/Desktop%20Folders/Spinach%20Test/backend/app/main.py)
   - `backend/requirements.txt`
-- **What it does**:
-  - Installs `opentelemetry-api`, `opentelemetry-sdk`, and `prometheus-fastapi-instrumentator`.
-  - Adds `/metrics` endpoint with counters, duration histograms, and queue lag gauges.
-  - Configures JSON structured logging with trace ID propagation across async tasks.
+- **Key Changes**:
+  - Instrument FastAPI and async SQLAlchemy with OpenTelemetry OTLP exporters.
+  - Expose `/metrics` for Prometheus (stream lag, processing latency histograms, DLQ count).
+  - Propagate W3C trace context across HTTP headers, outbox payloads, and worker tasks.
 
 ### PR 5: Data Retention, Partitioning & Disaster Recovery
-- **Files Changed**:
-  - `backend/migrations/versions/` (Partition `events` table)
+- **What**: Table partitioning on `events`, automated outbox cleanup, and S3 cold storage archival.
+- **Why**: Keeps database queries fast as event volume grows to millions of rows; enforces GDPR/CCPA data retention.
+- **Files Modified**:
+  - `backend/migrations/versions/` (Postgres table partitioning)
   - `backend/scripts/prune_outbox.py`
-  - `backend/scripts/backup_verification.sh`
-- **What it does**:
-  - Implements native PostgreSQL table partitioning by date range (`timestamp`) on `events`.
-  - Automates cleanup of processed outbox entries older than 7 days.
-  - Implements cold archival script dumping historical records to S3/GCS as Parquet files.
+  - `backend/scripts/archive_to_s3.py`
+- **Key Changes**:
+  - Convert `events` table to native PostgreSQL range partitioning by month.
+  - Cron job pruning processed outbox entries older than 7 days.
+  - Nightly export of cold historical events to Amazon S3 in Parquet format.
 
 ---
 
-## 5. Cost & Resource Comparison
+## 6. How Much It Costs: Production Budget Breakdown
 
-| Tier | Estimated Monthly Cost | Target Workload |
-| :--- | :--- | :--- |
-| **Current Prototype** | **$0 / month** (Render Free Tier) | Proof of concept, local evaluation, portfolio demo (< 1,000 events/day). |
-| **Entry Production** | **~$60–$150 / month**<br/>- Managed Postgres (Neon / Supabase Pro): $25<br/>- Upstash / Redis Cloud: $10<br/>- 2x API Web Instances: $14<br/>- 1x Worker Instance: $7 | Up to 1,000,000 events/month, 50 concurrent requests, small marketing team. |
-| **High-Scale Enterprise** | **~$800–$2,500 / month**<br/>- AWS Aurora Multi-AZ: $350<br/>- AWS ElastiCache Cluster: $180<br/>- EKS / ECS Worker Fleet: $400<br/>- Cloudflare Enterprise / WAF: $200<br/>- OpenRouter / LLM Tokens: Usage-based | 100,000,000+ events/month, multi-tenant enterprise SLA (99.95%), automated failover. |
+| Environment Tier | Monthly Cost (Est.) | Target Workload & Capacity | Infrastructure Components |
+| :--- | :--- | :--- | :--- |
+| **Current Prototype** | **$0 / mo** | Testing, proof of concept, demos (< 1,000 events/day). | 1x Render Free Web Service (512MB RAM, shared CPU) with embedded Postgres & Redis. |
+| **Entry Production** | **~$60–$150 / mo** | Early production, up to 1,000,000 events/month, 50 concurrent requests. | - Managed Postgres (Neon / Supabase Pro): $25<br/>- Upstash / Redis Cloud: $10<br/>- 2x Web API Replicas: $14<br/>- 1x Worker Replica: $7 |
+| **High-Scale Enterprise** | **~$800–$2,500 / mo** | 100M+ events/month, 99.95% SLA, multi-tenant enterprise traffic. | - AWS Aurora Multi-AZ: $350<br/>- AWS ElastiCache Cluster: $180<br/>- EKS / ECS Worker Fleet: $400<br/>- Cloudflare Enterprise WAF: $200<br/>- OpenRouter / LLM Tokens: Usage-based |
