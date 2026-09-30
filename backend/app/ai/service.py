@@ -2,6 +2,7 @@
 import asyncio
 import time
 from app.core.config import get_settings
+from app.ai.confidence import compute_confidence
 from app.ai.fallback import rule_based_summary
 from app.ai.grounding_guard import verify_grounding
 
@@ -27,9 +28,12 @@ class AnalysisService:
             analysis = await asyncio.wait_for(provider.generate(prompt, context), settings.LLM_TIMEOUT_SEC)
             # Facts come strictly from computed aggregates; model-generated prose is advisory.
             is_grounded, notes = verify_grounding(analysis.recommendations, context)
+            # Confidence is recalibrated against measured data support; the
+            # model's self-report only nudges it (see app.ai.confidence).
             analysis = analysis.model_copy(update={
                 "facts": fallback.facts,
                 "source": "llm",
+                "confidence": compute_confidence(context, model_confidence=analysis.confidence),
                 "grounding_verified": is_grounded,
                 "grounding_notes": notes,
             })

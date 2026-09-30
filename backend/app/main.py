@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.ai.adapters import build_provider
 from app.api import ai, audience, campaigns, customers, events, system
 from app.core.exceptions import register_exception_handlers
 from app.core.config import get_settings
@@ -32,27 +33,11 @@ logger = logging.getLogger(__name__)
 
 
 def create_llm():
-    settings = get_settings()
-    provider = (settings.LLM_PROVIDER or "none").lower()
-
-    if provider == "langchain" and (settings.OPENROUTER_API_KEY or settings.GROQ_API_KEY):
-        from app.ai.adapters.langchain_adapter import LangChainAdapter
-        return LangChainAdapter()
-    if provider == "openrouter" and settings.OPENROUTER_API_KEY:
-        from app.ai.adapters.openrouter_adapter import OpenRouterAdapter
-        return OpenRouterAdapter()
-    if provider == "groq" and settings.GROQ_API_KEY:
-        from app.ai.adapters.groq_adapter import GroqAdapter
-        return GroqAdapter()
-    if provider == "gemini" and settings.GEMINI_API_KEY:
-        from app.ai.adapters.gemini_adapter import GeminiAdapter
-        return GeminiAdapter()
-    if provider == "ollama":
-        from app.ai.adapters.ollama_adapter import OllamaAdapter
-        return OllamaAdapter()
-
-    logger.warning("No LLM provider configured — AI endpoints will use rule-based fallback")
-    return None
+    """Build the app-default provider via the single adapters factory."""
+    provider = build_provider(get_settings().LLM_PROVIDER)
+    if provider is None:
+        logger.warning("No LLM provider configured — AI endpoints will use rule-based fallback")
+    return provider
 
 
 @asynccontextmanager

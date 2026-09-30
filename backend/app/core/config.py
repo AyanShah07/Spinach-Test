@@ -42,7 +42,8 @@ class Settings(BaseSettings):
     WORKER_BATCH_SIZE: int = 10
     WORKER_BLOCK_MS: int = 5000
 
-    # LLM: "openrouter" | "langchain" | "groq" | "ollama" | "none"
+    # LLM provider name — "openrouter" | "groq" | "gemini" | "ollama" | "langchain" | "none"
+    # Resolved by app.ai.adapters.build_provider(); unknown/unconfigured → rule-based fallback.
     LLM_PROVIDER: str = "openrouter"
     # OpenRouter (primary for SaaS demo)
     OPENROUTER_API_KEY: str = ""

@@ -1,6 +1,7 @@
 """Campaign analysis backed by grounded facts and a recoverable provider circuit."""
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from app.ai.adapters import build_provider
 from app.ai.context_builder import build_campaign_context
 from app.ai.provider import AIResponse
 from app.ai.service import AnalysisService
@@ -22,16 +23,10 @@ def get_effective_llm(request: Request):
     ai_key = request.headers.get("x-ai-key", "").strip()
     ai_provider = (request.headers.get("x-ai-provider", "")).strip().lower()
 
-    if ai_key:
-        if ai_provider == "gemini":
-            from app.ai.adapters.gemini_adapter import GeminiAdapter
-            return GeminiAdapter(api_key=ai_key)
-        if ai_provider == "groq":
-            from app.ai.adapters.groq_adapter import GroqAdapter
-            return GroqAdapter(api_key=ai_key)
-        if ai_provider == "openrouter":
-            from app.ai.adapters.openrouter_adapter import OpenRouterAdapter
-            return OpenRouterAdapter(api_key=ai_key)
+    if ai_key and ai_provider:
+        provider = build_provider(ai_provider, api_key=ai_key)
+        if provider is not None:
+            return provider
 
     return getattr(request.app.state, "llm", None)
 

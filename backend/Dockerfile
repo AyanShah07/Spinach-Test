@@ -1,13 +1,18 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
+# uv is the only installer used in this image (faster resolution, no pip).
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+# No gcc/libpq-dev needed: every dependency ships a prebuilt wheel for
+# python 3.13 (psycopg2 was removed — the app uses asyncpg exclusively).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev postgresql postgresql-contrib redis-server curl procps \
+    postgresql postgresql-contrib redis-server curl procps \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.lock .
-RUN pip install --no-cache-dir -r requirements.lock
+COPY requirements.txt .
+RUN uv pip install --system --no-cache -r requirements.txt
 
 COPY app ./app
 COPY scripts ./scripts

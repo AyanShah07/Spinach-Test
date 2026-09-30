@@ -32,6 +32,7 @@ SEPARATION OF CONCERNS
 """
 from typing import Any
 
+from app.ai.confidence import compute_confidence
 from app.ai.provider import AIResponse
 
 
@@ -84,6 +85,9 @@ def rule_based_summary(context: dict[str, Any]) -> AIResponse:
     return AIResponse(
         facts=facts,
         recommendations=recommendations,
-        confidence=0.4,
+        # Computed from the verified aggregates (metric coverage, audience
+        # size, score-sample size) — never a static constant. See
+        # app.ai.confidence for the formula.
+        confidence=compute_confidence(context),
         source="fallback",
     )

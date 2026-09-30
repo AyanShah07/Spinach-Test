@@ -1,7 +1,8 @@
-.PHONY: help run-api run-worker seed test demo-dedup docker-up docker-scale docker-down clean
+.PHONY: help install run-api run-worker seed demo-dedup test docker-up docker-scale docker-down clean
 
 help:
 	@echo "Available commands:"
+	@echo "  make install       - Create .venv with uv and install backend/requirements.txt"
 	@echo "  make run-api       - Run FastAPI web server locally"
 	@echo "  make run-worker    - Run standalone background event worker"
 	@echo "  make seed          - Seed synthetic demo data (10 campaigns, 500 customers)"
@@ -12,20 +13,26 @@ help:
 	@echo "  make docker-down   - Stop and tear down Docker containers"
 	@echo "  make clean         - Clean Python build and cache artifacts"
 
+# Dependency management is uv-only (uv resolves the Python pinned in
+# .python-version and downloads it if missing). pip is not used anywhere.
+install:
+	uv venv --clear
+	uv pip install -r backend/requirements.txt
+
 run-api:
-	cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+	cd backend && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 run-worker:
-	cd backend && python -m app.workers
+	cd backend && uv run python -m app.workers
 
 seed:
-	cd backend && python -m scripts.generate_synthetic_data --customers 200 --events 500 --campaigns 10
+	cd backend && uv run python -m scripts.generate_synthetic_data --customers 200 --events 500 --campaigns 10
 
 demo-dedup:
-	cd backend && python -m scripts.demo_deduplication
+	cd backend && uv run python -m scripts.demo_deduplication
 
 test:
-	cd backend && pytest app/tests -q
+	cd backend && uv run pytest app/tests -q
 
 docker-up:
 	cd backend && docker compose up --build

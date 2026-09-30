@@ -53,7 +53,8 @@ This ensures:
 ### Why Grounded Facts + Number-Containment Guards for AI?
 LLMs are prone to hallucinations when generating quantitative performance assessments. Our architecture enforces a strict separation:
 - **Facts**: Computed directly from deterministic database aggregates (open rates, click rates, conversion rates).
-- **Number-Containment Guard**: An automated post-generation guard (`app.ai.grounding_guard`) verifies all quantitative claims (percentages, counts) against SQL metrics, rejecting hallucinated figures.
+- **Number-Containment Guard**: An automated post-generation guard (`app.ai.grounding_guard`) enforces strict boundaries on all quantitative claims — every percentage, count, currency amount, and multiplier in a recommendation must be traceable to a SQL aggregate; only small directional deltas ("increase by 5%") and linguistic counts are exempt, so hallucinated targets like "raise open rate to 95%" are rejected.
+- **Computed Confidence Score**: Confidence is never a static constant and never the model's self-report alone — it is calculated by a documented formula (`app.ai.confidence`) over the verified aggregates: metric coverage (50%), audience reliability on a log scale to 10,000 (30%), and engagement-sample sufficiency (20%, weights renormalized when a component is absent). The model's stated confidence, if any, is blended at a 30% trust weight on top of measured data support. Because demo data is random, every campaign scores differently.
 - **Circuit Breaker**: If the LLM provider fails, times out, or rate limits, the circuit trips into cooldown and returns a deterministic, rule-based summary without user-facing downtime.
 
 ---
@@ -102,9 +103,10 @@ The `/` web console includes a dedicated **🔑 Live Config** tab allowing real-
 6. Click **⚡ Generate Live Data** to automatically create database tables (`Base.metadata.create_all`) and seed 100 customers, 10 campaigns, and 500 events directly into Supabase, plus 10 demo stream events into Upstash.
 7. *Zero Persistence Guarantee*: Credentials reside in browser memory and are transmitted to the backend only for validation and request execution. They are never written to disk or logged.
 
-### How to Run with Makefile (Recommended)
+### How to Use Makefile (Recommended)
 ```bash
 make help          # View all available automation commands
+make install       # Create .venv with uv and install the single requirements.txt
 make run-api       # Run FastAPI web server locally with hot-reload
 make run-worker    # Run standalone background event worker
 make seed          # Seed synthetic demo data (10 campaigns, 500 customers)
@@ -129,17 +131,19 @@ docker compose up --build --scale worker=3
 - API Docs: `http://localhost:8000/docs`
 
 ### How to Run without Docker
-Ensure Python 3.11+, PostgreSQL 16+, and Redis 6.2+ are available:
+Dependency management is **uv-only** — pip is never used. Ensure [uv](https://docs.astral.sh/uv/getting-started/installation/) is installed (Python itself is managed by uv via the pinned `.python-version`):
 ```bash
+# From the repository root:
+uv venv                              # creates .venv with Python 3.13 (auto-downloads if missing)
+uv pip install -r backend/requirements.txt   # the single dependency manifest
+# Recreating an existing venv? Use: uv venv --clear && uv pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env
+# Set DATABASE_URL and REDIS_URL in backend/.env
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.lock
-cp .env.example .env
-# Set DATABASE_URL and REDIS_URL in .env
-alembic upgrade head
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+uv run alembic upgrade head
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+Or simply: `make install && make run-api`.
 
 ### How to Seed and Explore Demo Data
 ```bash
@@ -153,11 +157,11 @@ python -m scripts.generate_synthetic_data --customers 50000 --events 100000 --ca
 ### How to Test and Verify
 ```bash
 cd backend
-pytest app/tests -q
+uv run pytest app/tests -q
 # Optional real service tests:
 TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/martech_test \
-TEST_REDIS_URL=redis://localhost:6379/15 pytest app/tests -q
-alembic check
+TEST_REDIS_URL=redis://localhost:6379/15 uv run pytest app/tests -q
+uv run alembic check
 ```
 
 ---
