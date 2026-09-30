@@ -847,7 +847,7 @@
           $("groundingNotesBlock").style.display = "none";
         }
 
-        $("aiConfidenceText").textContent = "Confidence Score: " + (analysis.confidence ? (analysis.confidence * 100).toFixed(0) + "%" : "High");
+        $("aiConfidenceText").textContent = "Confidence Score: " + (analysis.confidence ? (analysis.confidence * 100).toFixed(1) + "%" : "High");
 
         // Facts list
         const facts = analysis.facts || [];
